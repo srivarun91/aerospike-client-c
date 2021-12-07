@@ -207,6 +207,7 @@ as_scan_parse_records_async(as_event_command* cmd)
 	while (p < end) {
 		as_msg* msg = (as_msg*)p;
 		as_msg_swap_header_from_be(msg);
+		p += sizeof(as_msg);
 		
 		if (msg->info3 & AS_MSG_INFO3_LAST) {
 			if (msg->result_code != AEROSPIKE_OK) {
@@ -243,8 +244,6 @@ as_scan_parse_records_async(as_event_command* cmd)
 			as_event_response_error(cmd, &err);
 			return true;
 		}
-
-		p += sizeof(as_msg);
 
 		if (! se->executor.valid) {
 			as_error_set_message(&err, AEROSPIKE_ERR_CLIENT_ABORT, "");
@@ -304,6 +303,7 @@ as_scan_parse_records(as_error* err, as_node* node, uint8_t* buf, size_t size, v
 	while (p < end) {
 		as_msg* msg = (as_msg*)p;
 		as_msg_swap_header_from_be(msg);
+		p += sizeof(as_msg);
 		
 		if (msg->info3 & AS_MSG_INFO3_LAST) {
 			if (msg->result_code != AEROSPIKE_OK) {
@@ -334,8 +334,6 @@ as_scan_parse_records(as_error* err, as_node* node, uint8_t* buf, size_t size, v
 			}
 			return as_error_set_message(err, msg->result_code, as_error_string(msg->result_code));
 		}
-
-		p += sizeof(as_msg);
 
 		status = as_scan_parse_record(&p, msg, task, err);
 		
