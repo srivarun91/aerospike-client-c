@@ -777,7 +777,7 @@ TEST(exp_merge, "exp merge")
 	as_operations_exp_read(&ops, "res2", eor, AS_EXP_READ_DEFAULT);
 
 	as_error err;
-	as_record* rec;
+	as_record* rec = NULL;
 	as_status rc = aerospike_key_operate(as, &err, NULL, &keyA, &ops, &rec);
 	assert_int_eq(rc, AEROSPIKE_OK);
 
