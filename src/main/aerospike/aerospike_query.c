@@ -206,7 +206,15 @@ as_query_parse_record_async(as_event_command* cmd, uint8_t** pp, as_msg* msg, as
 	
 	rec.gen = msg->generation;
 	rec.ttl = cf_server_void_time_to_ttl(msg->record_ttl);
-	*pp = as_command_parse_key(*pp, msg->n_fields, &rec.key);
+
+	// Dummy.
+	int64_t bval;
+	bool bval_set = false;
+
+	*pp = as_command_parse_key(*pp, msg->n_fields, &rec.key, &bval, &bval_set);
+
+	(void)bval;
+	(void)bval_set;
 
 	as_status status = as_command_parse_bins(pp, err, &rec, msg->n_ops,
 											 cmd->flags2 & AS_ASYNC_FLAGS2_DESERIALIZE);
@@ -307,7 +315,15 @@ as_query_parse_record(uint8_t** pp, as_msg* msg, as_query_task* task, as_error* 
 		
 		rec.gen = msg->generation;
 		rec.ttl = cf_server_void_time_to_ttl(msg->record_ttl);
-		*pp = as_command_parse_key(*pp, msg->n_fields, &rec.key);
+
+		// Dummy.
+		int64_t bval;
+		bool bval_set = false;
+
+		*pp = as_command_parse_key(*pp, msg->n_fields, &rec.key, &bval, &bval_set);
+
+		(void)bval;
+		(void)bval_set;
 
 		as_status status = as_command_parse_bins(pp, err, &rec, msg->n_ops, task->query_policy->deserialize);
 
@@ -1013,7 +1029,7 @@ as_query_aggregate(void* data)
 
 static void
 convert_query_to_scan(
-	const as_policy_query* query_policy, const as_query* query, as_policy_scan* scan_policy,
+	const as_policy_query* query_policy, as_query* query, as_policy_scan* scan_policy,
 	as_scan* scan
 	)
 {
@@ -1025,6 +1041,10 @@ convert_query_to_scan(
 	scan->select.capacity = query->select.capacity;
 	scan->select.size = query->select.size;
 	scan->select._free = query->select._free;
+
+	if (query->where.size != 0) {
+		scan->where = &query->where;
+	}
 
 	scan->predexp.entries = query->predexp.entries;
 	scan->predexp.capacity = query->predexp.capacity;
@@ -1049,7 +1069,7 @@ convert_query_to_scan(
 
 as_status
 aerospike_query_foreach(
-	aerospike* as, as_error* err, const as_policy_query* policy, const as_query* query,
+	aerospike* as, as_error* err, const as_policy_query* policy, as_query* query,
 	aerospike_query_foreach_callback callback, void* udata)
 {
 	if (! policy) {
@@ -1060,7 +1080,8 @@ aerospike_query_foreach(
 
 	// Convert to a scan when filter doesn't exist and not aggregation query and
 	// partition scans are supported.
-	if (query->where.size == 0 && ! query->apply.function[0]) {
+	// FIXME(varun): should we convert everything including UDF?
+	if (! query->apply.function[0]) {
 		as_policy_scan scan_policy;
 		as_scan scan;
 		convert_query_to_scan(policy, query, &scan_policy, &scan);
@@ -1163,7 +1184,7 @@ aerospike_query_foreach(
 
 as_status
 aerospike_query_async(
-	aerospike* as, as_error* err, const as_policy_query* policy, const as_query* query,
+	aerospike* as, as_error* err, const as_policy_query* policy, as_query* query,
 	as_async_query_record_listener listener, void* udata, as_event_loop* event_loop)
 {
 	if (! policy) {
