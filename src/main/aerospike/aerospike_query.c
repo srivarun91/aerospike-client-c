@@ -1035,6 +1035,8 @@ convert_query_to_scan(
 {
 	as_policy_scan_init(scan_policy);
 	memcpy(&scan_policy->base, &query_policy->base, sizeof(as_policy_base));
+	scan_policy->max_records = query_policy->max_records;
+	scan_policy->records_per_second = query_policy->records_per_second;
 
 	as_scan_init(scan, query->ns, query->set);
 	scan->select.entries = query->select.entries;
@@ -1057,6 +1059,7 @@ convert_query_to_scan(
 	scan->apply_each._free = query->apply._free;
 
 	scan->ops = query->ops;
+	scan->paginate = query->paginate;
 	scan->no_bins = query->no_bins;
 	scan->concurrent = true;
 	scan->deserialize_list_map = query_policy->deserialize;
@@ -1086,7 +1089,13 @@ aerospike_query_foreach(
 		as_scan scan;
 		convert_query_to_scan(policy, query, &scan_policy, &scan);
 
-		return aerospike_scan_foreach(as, err, &scan_policy, &scan, callback, udata);
+		as_status status = aerospike_scan_foreach(as, err, &scan_policy, &scan, callback, udata);
+
+		query->parts_all = scan.parts_all;
+
+		// FIXME: scan object is not destroyed - may leak resources?
+
+		return status;
 	}
 
 	as_error_reset(err);
@@ -1179,6 +1188,34 @@ aerospike_query_foreach(
 	}
 
 	as_cluster_release_all_nodes(nodes);
+	return status;
+}
+
+as_status
+aerospike_query_partitions(
+	aerospike* as, as_error* err, const as_policy_query* policy, as_query* query,
+	as_partition_filter* pf, aerospike_query_foreach_callback callback, void* udata
+	)
+{
+	// FIXME(varun): should we convert everything including UDF?
+	if (query->apply.function[0]) {
+		return as_error_update(err, AEROSPIKE_ERR_PARAM, "UDF not supported");
+	}
+
+	if (! policy) {
+		policy = &as->config.policies.query;
+	}
+
+	as_policy_scan scan_policy;
+	as_scan scan;
+	convert_query_to_scan(policy, query, &scan_policy, &scan);
+
+	as_status status = aerospike_scan_partitions(as, err, &scan_policy, &scan, pf, callback, udata);
+
+	query->parts_all = scan.parts_all;
+
+	// FIXME: scan object is not destroyed - may leak resources?
+
 	return status;
 }
 
