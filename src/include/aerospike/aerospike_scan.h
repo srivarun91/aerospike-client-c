@@ -16,7 +16,7 @@
  */
 #pragma once
 
-/** 
+/**
  * @defgroup scan_operations Scan Operations
  * @ingroup client_operations
  *
@@ -43,10 +43,10 @@
  * status on the database via aerospike_scan_info().
  *
  * ## Walk-through
- * 
+ *
  * First, we build a scan using as_scan. The scan will be on the "test" namespace and "demo" set.
  * We will select only bins "a" and "b" to be returned for each record.
- * 
+ *
  * @code
  * as_scan scan;
  * as_scan_init(&scan, "test", "demo");
@@ -55,18 +55,18 @@
  * as_scan_select(&scan, "a");
  * as_scan_select(&scan, "B");
  * @endcode
- * 
- * Now that we have a scan defined, we want to execute it using 
+ *
+ * Now that we have a scan defined, we want to execute it using
  * aerospike_scan_foreach().
- * 
+ *
  * @code
  * if (aerospike_scan_foreach(&as, &err, NULL, &scan, callback, NULL) != AEROSPIKE_OK) {
  *     printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
  * }
  * @endcode
- * 
+ *
  * The callback provided to the function above is implemented as:
- * 
+ *
  * @code
  * bool callback(const as_val* val, void* udata)
  * {
@@ -141,6 +141,26 @@ typedef bool (*as_async_scan_listener)(
 	as_error* err, as_record* record, void* udata, as_event_loop* event_loop
 	);
 
+/**
+ * This callback will be called for each record returned from a vector scan.
+ * Multiple threads will likely be calling this callback in parallel.  Therefore,
+ * your callback implementation should be thread safe.
+ *
+ * @param namespace		Namespace of the record.
+ * @param digest		Record digest.
+ * @param set			Set name of the record (may be NULL).
+ * @param distance		Vector distance from the query vector.
+ * @param udata 		User-data provided to the calling function.
+ *
+ * @return `true` to continue to the next record. Otherwise, iteration will end.
+ *
+ * @ingroup scan_operations
+ */
+typedef bool (*aerospike_vector_scan_callback)(
+	const char* namespace, const uint8_t* digest, const char* set,
+	double distance, void* udata
+);
+
 /******************************************************************************
  * FUNCTIONS
  *****************************************************************************/
@@ -150,13 +170,13 @@ typedef bool (*as_async_scan_listener)(
  *
  * Scan will be run in the background by a thread on client side.
  * No callback will be called in this case.
- * 
+ *
  * @code
  * as_scan scan;
  * as_scan_init(&scan, "test", "demo");
- * 
+ *
  * uint64_t scanid = 0;
- * 
+ *
  * if (aerospike_scan_background(&as, &err, NULL, &scan, &scanid) != AEROSPIKE_OK) {
  *     printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
  * }
@@ -166,7 +186,7 @@ typedef bool (*as_async_scan_listener)(
  * as_scan_destroy(&scan);
  * @endcode
  *
- * The scanid can be used to query the status of the scan running in the 
+ * The scanid can be used to query the status of the scan running in the
  * database via aerospike_scan_info().
  *
  * @param as			The aerospike instance to use for this operation.
@@ -210,11 +230,11 @@ aerospike_scan_wait(
 /**
  * Check the progress of a background scan running on the database. The status
  * of the scan running on the datatabse will be populated into an as_scan_info.
- * 
+ *
  * @code
  * uint64_t scan_id = 1234;
  * as_scan_info scan_info;
- * 
+ *
  * if (aerospike_scan_info(&as, &err, NULL, &scan, scan_id, &scan_info) != AEROSPIKE_OK) {
  *     printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
  * }
@@ -222,7 +242,7 @@ aerospike_scan_wait(
  *     printf("Scan id=%ll, status=%d percent=%d", scan_id, scan_info.status, scan_info.progress_pct);
  * }
  * @endcode
- * 
+ *
  * @param as			The aerospike instance to use for this operation.
  * @param err			The as_error to be populated if an error occurs.
  * @param policy		Scan policy configuration parameters, pass in NULL for default.
@@ -241,7 +261,7 @@ aerospike_scan_info(
 /**
  * Scan the records in the specified namespace and set in the cluster.
  *
- * Call the callback function for each record scanned. When all records have 
+ * Call the callback function for each record scanned. When all records have
  * been scanned, then callback will be called with a NULL value for the record.
  *
  * If "scan.concurrent" is true (default false), the callback code must be thread-safe.
@@ -261,13 +281,13 @@ aerospike_scan_info(
  *
  * as_scan scan;
  * as_scan_init(&scan, "test", "demo");
- * 
+ *
  * if (aerospike_scan_foreach(&as, &err, NULL, &scan, callback, NULL) != AEROSPIKE_OK) {
  *     printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
  * }
  * as_scan_destroy(&scan);
  * @endcode
- * 
+ *
  * @param as			The aerospike instance to use for this operation.
  * @param err			The as_error to be populated if an error occurs.
  * @param policy		Scan policy configuration parameters, pass in NULL for default.
@@ -343,7 +363,7 @@ aerospike_scan_node(
 /**
  * Scan records in specified namespace, set and partition filter.
  *
- * Call the callback function for each record scanned. When all records have 
+ * Call the callback function for each record scanned. When all records have
  * been scanned, then callback will be called with a NULL value for the record.
  *
  * If "scan.concurrent" is true (default false), the callback code must be thread-safe.
@@ -366,13 +386,13 @@ aerospike_scan_node(
  *
  * as_partition_filter pf;
  * as_partition_filter_set_range(&pf, 0, 1024);
- * 
+ *
  * if (aerospike_scan_partitions(&as, &err, NULL, &scan, &pf, callback, NULL) != AEROSPIKE_OK) {
  *     printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
  * }
  * as_scan_destroy(&scan);
  * @endcode
- * 
+ *
  * @param as			The aerospike instance to use for this operation.
  * @param err			The as_error to be populated if an error occurs.
  * @param policy		Scan policy configuration parameters, pass in NULL for default.
@@ -432,7 +452,7 @@ aerospike_scan_partitions(
  * @param scan_id		This legacy argument is ignored. scan_ids are now internally generated. Always pass in NULL.
  * @param listener		The function to be called for each record scanned.
  * @param udata			User-data to be passed to the callback.
- * @param event_loop 	Event loop assigned to run this command. If NULL, an event loop will be 
+ * @param event_loop 	Event loop assigned to run this command. If NULL, an event loop will be
  *                      chosen by round-robin.
  *
  * @return AEROSPIKE_OK if async scan succesfully queued. Otherwise an error.
@@ -444,7 +464,7 @@ aerospike_scan_async(
 	aerospike* as, as_error* err, const as_policy_scan* policy, as_scan* scan, uint64_t* scan_id,
 	as_async_scan_listener listener, void* udata, as_event_loop* event_loop
 	);
-	
+
 /**
  * Asynchronously scan the records in the specified namespace and set for a single node.
  *
@@ -561,6 +581,52 @@ AS_EXTERN as_status
 aerospike_scan_partitions_async(
 	aerospike* as, as_error* err, const as_policy_scan* policy, as_scan* scan,
 	as_partition_filter* pf, as_async_scan_listener listener, void* udata, as_event_loop* event_loop
+	);
+
+/**
+ * Execute a vector scan on the records in the specified namespace and set in the cluster.
+ * Vector scan returns records with vector distances from the query vector.
+ *
+ * @code
+ * // Create query vector
+ * float query_vector[] = {1.0f, 2.0f, 3.0f, 4.0f};
+ * as_vector vector;
+ * as_vector_init_float32(&vector, query_vector, 4, true);
+ *
+ * // Create scan
+ * as_scan scan;
+ * as_scan_init(&scan, "test", "demo");
+ * as_scan_set_vector(&scan, &vector, "vector_bin");
+ *
+ * bool callback(const char* ns, const uint8_t* digest, const char* set, double distance, void* udata)
+ * {
+ *     printf("Record: ns=%s, set=%s, distance=%f\n", ns, set ? set : "(null)", distance);
+ *     return true;
+ * }
+ *
+ * if (aerospike_vector_scan(&as, &err, NULL, &scan, callback, NULL) != AEROSPIKE_OK) {
+ *     printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
+ * }
+ *
+ * as_vector_destroy(&vector);
+ * as_scan_destroy(&scan);
+ * @endcode
+ *
+ * @param as			The aerospike instance to use for this operation.
+ * @param err			The as_error to be populated if an error occurs.
+ * @param policy		Scan policy configuration parameters, pass in NULL for default.
+ * @param scan			The scan to execute against the cluster. Must have vector set via as_scan_set_vector().
+ * @param callback		The function to be called for each record with vector distance.
+ * @param udata			User-data to be passed to the callback.
+ *
+ * @return AEROSPIKE_OK on success. Otherwise an error occurred.
+ *
+ * @ingroup scan_operations
+ */
+AS_EXTERN as_status
+aerospike_vector_scan(
+	aerospike* as, as_error* err, const as_policy_scan* policy, as_scan* scan,
+	aerospike_vector_scan_callback callback, void* udata
 	);
 
 #ifdef __cplusplus

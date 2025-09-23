@@ -18,6 +18,7 @@
 #include <aerospike/as_atomic.h>
 #include <aerospike/as_cdt_internal.h>
 #include <aerospike/as_operations.h>
+#include <aerospike/as_ml_vector.h>
 #include <citrusleaf/alloc.h>
 
 //---------------------------------
@@ -37,7 +38,7 @@ as_scan_defaults(as_scan* scan, bool free, const char* ns, const char* set)
 	else {
 		scan->ns[0] = '\0';
 	}
-	
+
 	//check set==NULL and set name length
 	if ( set && strlen(set) < AS_SET_MAX_SIZE ) {
 		strcpy(scan->set, set);
@@ -45,7 +46,7 @@ as_scan_defaults(as_scan* scan, bool free, const char* ns, const char* set)
 	else {
 		scan->set[0] = '\0';
 	}
-	
+
 	scan->select._free = false;
 	scan->select.capacity = 0;
 	scan->select.size = 0;
@@ -55,12 +56,15 @@ as_scan_defaults(as_scan* scan, bool free, const char* ns, const char* set)
 	scan->no_bins = AS_SCAN_NOBINS_DEFAULT;
 	scan->concurrent = AS_SCAN_CONCURRENT_DEFAULT;
 	scan->deserialize_list_map = AS_SCAN_DESERIALIZE_DEFAULT;
-	
+
 	as_udf_call_init(&scan->apply_each, NULL, NULL, NULL);
 
 	scan->parts_all = NULL;
 	scan->ttl = 0;
 	scan->paginate = false;
+	scan->vector = NULL;
+	scan->vector_element_type = AS_ML_VECTOR_FLOAT32; // Default
+	scan->vector_bin_name = NULL;
 
 	return scan;
 }
@@ -100,6 +104,10 @@ as_scan_destroy(as_scan* scan)
 
 	if (scan->parts_all) {
 		as_partitions_status_release(scan->parts_all);
+	}
+
+	if (scan->vector_bin_name) {
+		cf_free(scan->vector_bin_name);
 	}
 
 	// If the whole structure should be freed
@@ -667,4 +675,27 @@ as_scan_compare(as_scan* s1, as_scan* s2)
 	}
 
 	return true;
+}
+
+//---------------------------------
+// Vector Functions
+//---------------------------------
+
+void
+as_scan_set_vector(as_scan* scan, as_vector* vector, as_ml_vector_element_type element_type, const char* bin_name)
+{
+	if (!scan || !vector || !bin_name) {
+		return;
+	}
+
+	scan->vector = vector;
+	scan->vector_element_type = element_type;
+
+	// Free existing bin name if any
+	if (scan->vector_bin_name) {
+		cf_free(scan->vector_bin_name);
+	}
+
+	// Copy bin name
+	scan->vector_bin_name = cf_strdup(bin_name);
 }

@@ -14,12 +14,14 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-#pragma once 
+#pragma once
 
 #include <aerospike/as_bin.h>
 #include <aerospike/as_key.h>
 #include <aerospike/as_partition_filter.h>
 #include <aerospike/as_udf.h>
+#include <aerospike/as_vector.h>
+#include <aerospike/as_ml_vector.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -139,14 +141,14 @@ typedef struct as_scan_bins_s {
  * must be initialized and populated.
  *
  * ## Initialization
- * 
- * Before using an as_scan, it must be initialized via either: 
+ *
+ * Before using an as_scan, it must be initialized via either:
  * - as_scan_init()
  * - as_scan_new()
- * 
+ *
  * as_scan_init() should be used on a stack allocated as_scan. It will
  * initialize the as_scan with the given namespace and set. On success,
- * it will return a pointer to the initialized as_scan. Otherwise, NULL 
+ * it will return a pointer to the initialized as_scan. Otherwise, NULL
  * is returned.
  *
  * @code
@@ -155,8 +157,8 @@ typedef struct as_scan_bins_s {
  * @endcode
  *
  * as_scan_new() should be used to allocate and initialize a heap allocated
- * as_scan. It will allocate the as_scan, then initialized it with the 
- * given namespace and set. On success, it will return a pointer to the 
+ * as_scan. It will allocate the as_scan, then initialized it with the
+ * given namespace and set. On success, it will return a pointer to the
  * initialized as_scan. Otherwise, NULL is returned.
  *
  * @code
@@ -179,9 +181,9 @@ typedef struct as_scan_bins_s {
  * ### Selecting Bins
  *
  * as_scan_select() is used to specify the bins to be selected by the scan.
- * If a scan specifies bins to be selected, then only those bins will be 
+ * If a scan specifies bins to be selected, then only those bins will be
  * returned. If no bins are selected, then all bins will be returned.
- * 
+ *
  * @code
  * as_scan_select(query, "bin1");
  * as_scan_select(query, "bin2");
@@ -213,7 +215,7 @@ typedef struct as_scan_bins_s {
  * ### Scan nodes in parallel
  *
  * A scan can be made to scan all the nodes in parallel
- * 
+ *
  * @code
  * as_scan_set_concurrent(scan, true);
  * @endcode
@@ -275,7 +277,7 @@ typedef struct as_scan_s {
 
 	/**
 	 * Name of bins to select.
-	 * 
+	 *
 	 * Use either of the following function to initialize:
 	 * - as_scan_select_init() - To initialize on the heap.
 	 * - as_scan_select_inita() - To initialize on the stack.
@@ -344,7 +346,26 @@ typedef struct as_scan_s {
 	 * Default value is AS_SCAN_DESERIALIZE_DEFAULT.
 	 */
 	bool deserialize_list_map;
-	
+
+	/**
+	 * Vector for vector-based scanning. If set, the scan will perform
+	 * vector similarity search and return records with vector distances.
+	 * Set via as_scan_set_vector().
+	 */
+	as_vector* vector;
+
+	/**
+	 * Type of elements in the vector. Required when vector is set.
+	 * Set via as_scan_set_vector().
+	 */
+	as_ml_vector_element_type vector_element_type;
+
+	/**
+	 * Name of the bin containing the vector data to compare against.
+	 * Required when vector is set. Set via as_scan_set_vector().
+	 */
+	char* vector_bin_name;
+
 	/**
 	 * @private
 	 * If true, then as_scan_destroy() will free this instance.
@@ -359,13 +380,13 @@ typedef struct as_scan_s {
 
 /**
  * Initializes a scan.
- * 
+ *
  * @code
  * as_scan scan;
  * as_scan_init(&scan, "test", "demo");
  * @endcode
  *
- * When you no longer require the scan, you should release the scan and 
+ * When you no longer require the scan, you should release the scan and
  * related resources via `as_scan_destroy()`.
  *
  * @param scan		The scan to initialize.
@@ -382,12 +403,12 @@ as_scan_init(as_scan* scan, const char* ns, const char* set);
 
 /**
  * Create and initializes a new scan on the heap.
- * 
+ *
  * @code
  * as_scan* scan = as_scan_new("test","demo");
  * @endcode
  *
- * When you no longer require the scan, you should release the scan and 
+ * When you no longer require the scan, you should release the scan and
  * related resources via `as_scan_destroy()`.
  *
  * @param ns 		The namespace to scan.
@@ -403,7 +424,7 @@ as_scan_new(const char* ns, const char* set);
 
 /**
  * Releases all resources allocated to the scan.
- * 
+ *
  * @code
  * as_scan_destroy(scan);
  * @endcode
@@ -418,7 +439,7 @@ as_scan_destroy(as_scan* scan);
 // Select Functions
 //---------------------------------
 
-/** 
+/**
  * Initializes `as_scan.select` with a capacity of `n` using `alloca`
  *
  * For heap allocation, use `as_scan_select_init()`.
@@ -428,7 +449,7 @@ as_scan_destroy(as_scan* scan);
  * as_scan_select(&scan, "bin1");
  * as_scan_select(&scan, "bin2");
  * @endcode
- * 
+ *
  * @param __scan	The scan to initialize.
  * @param __n		The number of bins to allocate.
  *
@@ -447,9 +468,9 @@ as_scan_destroy(as_scan* scan);
 	 	}\
 	} while(0)
 
-/** 
+/**
  * Initializes `as_scan.select` with a capacity of `n` using `malloc()`.
- * 
+ *
  * For stack allocation, use `as_scan_select_inita()`.
  *
  * @code
@@ -472,7 +493,7 @@ as_scan_select_init(as_scan* scan, uint16_t n);
 /**
  * Select bins to be projected from matching records.
  *
- * You have to ensure as_scan.select has sufficient capacity, prior to 
+ * You have to ensure as_scan.select has sufficient capacity, prior to
  * adding a bin. If capacity is insufficient then false is returned.
  *
  * @code
@@ -498,7 +519,7 @@ as_scan_select(as_scan* scan, const char * bin);
 
 /**
  * Do not return bins. This will only return the metadata for the records.
- * 
+ *
  * @code
  * as_scan_set_nobins(&q, true);
  * @endcode
@@ -516,7 +537,7 @@ as_scan_set_nobins(as_scan* scan, bool nobins);
 
 /**
  * Scan all the nodes in prallel
- * 
+ *
  * @code
  * as_scan_set_concurrent(&q, true);
  * @endcode
@@ -538,13 +559,13 @@ as_scan_set_concurrent(as_scan* scan, bool concurrent);
 
 /**
  * Apply a UDF to each record scanned on the server.
- * 
+ *
  * @code
  * as_arraylist arglist;
  * as_arraylist_init(&arglist, 2, 0);
  * as_arraylist_append_int64(&arglist, 1);
  * as_arraylist_append_int64(&arglist, 2);
- * 
+ *
  * as_scan_apply_each(&q, "module", "func", (as_list *) &arglist);
  *
  * as_arraylist_destroy(&arglist);
@@ -569,7 +590,7 @@ as_scan_apply_each(as_scan* scan, const char* module, const char* function, as_l
 
 /**
  * Set to true if as_policy_scan.max_records is set and you need to scan data in pages.
- * 
+ *
  * @relates as_scan
  * @ingroup scan_operations
  */
@@ -593,7 +614,20 @@ as_scan_set_partitions(as_scan* scan, as_partitions_status* parts_all)
 }
 
 /**
- * If using scan pagination, did previous paginated scan with this scan instance 
+ * Set vector for vector-based scanning.
+ *
+ * @param scan			The scan to modify.
+ * @param vector		The query vector to use for similarity search.
+ * @param bin_name		Name of the bin containing vector data to compare against.
+ *
+ * @relates as_scan
+ * @ingroup scan_operations
+ */
+AS_EXTERN void
+as_scan_set_vector(as_scan* scan, as_vector* vector, as_ml_vector_element_type element_type, const char* bin_name);
+
+/**
+ * If using scan pagination, did previous paginated scan with this scan instance
  * return all records?
  *
  * @relates as_scan
@@ -637,7 +671,7 @@ as_scan_from_bytes(as_scan* scan, const uint8_t* bytes, uint32_t bytes_size);
  * as_scan_destroy() should be called when done with the scan definition.
  *
  * @returns scan definition on success and NULL on failure.
- * 
+ *
  * @relates as_scan
  * @ingroup scan_operations
  */

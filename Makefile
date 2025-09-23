@@ -16,7 +16,7 @@ O = 3
 # Make-local Compiler Flags
 EXT_CFLAGS =
 CC_FLAGS = -std=gnu99 -g -Wall -fPIC -O$(O)
-CC_FLAGS += -fno-common -fno-strict-aliasing 
+CC_FLAGS += -fno-common -fno-strict-aliasing
 CC_FLAGS += -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_GNU_SOURCE $(EXT_CFLAGS)
 
 ifeq ($(ARCH),x86_64)
@@ -99,7 +99,7 @@ INC_PATH += $(LUAMOD)
 ##  OBJECTS                                                                  ##
 ###############################################################################
 
-AEROSPIKE = 
+AEROSPIKE =
 AEROSPIKE += _bin.o
 AEROSPIKE += aerospike.o
 AEROSPIKE += aerospike_batch.o
@@ -141,6 +141,7 @@ AEROSPIKE += as_lookup.o
 AEROSPIKE += as_map_operations.o
 AEROSPIKE += as_metrics.o
 AEROSPIKE += as_metrics_writer.o
+AEROSPIKE += as_ml_vector.o
 AEROSPIKE += as_node.o
 AEROSPIKE += as_operations.o
 AEROSPIKE += as_partition.o
@@ -164,7 +165,7 @@ AEROSPIKE += as_udf.o
 AEROSPIKE += as_version.o
 AEROSPIKE += version.o
 
-OBJECTS := 
+OBJECTS :=
 OBJECTS += $(AEROSPIKE:%=$(TARGET_OBJ)/aerospike/%)
 
 DEPS =
@@ -189,7 +190,7 @@ COMMON-HEADERS += $(COMMON)/$(SOURCE_INCL)/citrusleaf/cf_clock.h
 COMMON-HEADERS += $(COMMON)/$(SOURCE_INCL)/citrusleaf/cf_ll.h
 COMMON-HEADERS += $(COMMON)/$(SOURCE_INCL)/citrusleaf/cf_queue.h
 
-EXCLUDE-HEADERS = 
+EXCLUDE-HEADERS =
 
 AEROSPIKE-HEADERS := $(filter-out $(EXCLUDE-HEADERS), $(wildcard $(SOURCE_INCL)/aerospike/*.h))
 
@@ -218,7 +219,7 @@ build:  libaerospike
 prepare: modules-prepare $(subst $(SOURCE_INCL),$(TARGET_INCL),$(AEROSPIKE-HEADERS))
 
 .PHONY: prepare-clean
-prepare-clean: 
+prepare-clean:
 	@rm -rf $(TARGET_INCL)
 
 .PHONY: libaerospike
