@@ -234,7 +234,7 @@ as_lookup_host(as_address_iterator* iter, as_error* err, const char* hostname, u
 
 	// Check if hostname is really an IPv4 address.
 	struct in_addr ipv4;
-	
+
 	if (inet_pton(AF_INET, hostname, &ipv4) == 1) {
 		hints.ai_family = AF_INET;
 		hints.ai_flags = AI_NUMERICHOST;
@@ -243,21 +243,21 @@ as_lookup_host(as_address_iterator* iter, as_error* err, const char* hostname, u
 	else {
 		// Check if hostname is really an IPv6 address.
 		struct in6_addr ipv6;
-		
+
 		if (inet_pton(AF_INET6, hostname, &ipv6) == 1) {
 			hints.ai_family = AF_INET6;
 			hints.ai_flags = AI_NUMERICHOST;
 			iter->hostname_is_alias = false;
 		}
 	}
-	
+
 	int ret = getaddrinfo(hostname, NULL, &hints, &iter->addresses);
-	
+
 	if (ret) {
 		return as_error_update(err, AEROSPIKE_ERR_INVALID_HOST, "Invalid hostname %s: %s",
 							   hostname, gai_strerror(ret));
 	}
-	
+
 	iter->current = iter->addresses;
 	iter->port_be = cf_swap_to_be16(port);
 	return AEROSPIKE_OK;
@@ -270,7 +270,7 @@ as_lookup_node(
 	)
 {
 	uint64_t deadline = as_socket_deadline(cluster->conn_timeout_ms);
-	
+
 	as_status status = as_socket_create_and_connect(&node_info->socket, err, addr, cluster->tls_ctx,
 													host->tls_name, deadline);
 
@@ -338,18 +338,18 @@ as_lookup_node(
 
 	char* response = 0;
 	status = as_info_command(err, &node_info->socket, NULL, sb.data, true, deadline, 0, &response);
-	
+
 	if (status) {
 		as_socket_error_append(err, (struct sockaddr*)&node_info->addr);
 		as_node_info_destroy(node_info);
 		return status;
 	}
-	
+
 	as_vector values;
 	as_vector_inita(&values, sizeof(as_name_value), args);
-	
+
 	as_info_parse_multi_response(response, &values);
-	
+
 	if ((detect_load_balancer && values.size < args - 1) || (!detect_load_balancer && values.size != args)) {
 		// Vector was probably resized on heap. Destroy vector.
 		as_vector_destroy(&values);
@@ -361,7 +361,7 @@ as_lookup_node(
 	// Process node name.
 	as_name_value* nv = as_vector_get(&values, args++);
 	char* node_name = nv->value;
-	
+
 	if (node_name == 0 || *node_name == 0) {
 		goto Error;
 	}
@@ -384,7 +384,14 @@ as_lookup_node(
 	// Process server build version.
 	nv = as_vector_get(&values, args++);
 
-	if (!as_version_from_string(&node_info->version, nv->value)) {
+	// Some custom/dev servers may return an empty build string. Treat as 0.0.0.0.
+	if (nv->value == 0 || *nv->value == 0) {
+		node_info->version.major = 0;
+		node_info->version.minor = 0;
+		node_info->version.patch = 0;
+		node_info->version.build = 0;
+	}
+	else if (!as_version_from_string(&node_info->version, nv->value)) {
 		char addr_name[AS_IP_ADDRESS_SIZE];
 		as_address_name((struct sockaddr*)&node_info->addr, addr_name, sizeof(addr_name));
 		as_error_update(err, AEROSPIKE_ERR_CLIENT, "Node %s %s version is invalid: %s",
@@ -449,7 +456,7 @@ as_lookup_node(
 	// Process cluster name.
 	if (cluster->cluster_name) {
 		nv = as_vector_get(&values, args++);
-		
+
 		if (strcmp(cluster->cluster_name, nv->value) != 0) {
 			char addr_name[AS_IP_ADDRESS_SIZE];
 			as_address_name((struct sockaddr*)&node_info->addr, addr_name, sizeof(addr_name));
@@ -475,7 +482,7 @@ as_lookup_node(
 
 	cf_free(response);
 	return AEROSPIKE_OK;
-	
+
 Error: {
 	char addr_name[AS_IP_ADDRESS_SIZE];
 	as_address_name((struct sockaddr*)&node_info->addr, addr_name, sizeof(addr_name));

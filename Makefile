@@ -6,7 +6,7 @@ include project/settings.mk
 # Modules
 COMMON := $(abspath modules/common)
 LUAMOD := $(abspath modules/lua)
-MOD_LUA	:= $(abspath modules/mod-lua)
+MOD_LUA := $(abspath modules/mod-lua)
 MODULES	:= COMMON
 MODULES += MOD_LUA
 

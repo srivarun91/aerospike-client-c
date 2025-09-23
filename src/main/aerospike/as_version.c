@@ -16,6 +16,7 @@
  */
 #include <aerospike/as_version.h>
 #include <stdio.h>
+#include <ctype.h>
 
 //---------------------------------
 // Functions
@@ -24,7 +25,24 @@
 bool
 as_version_from_string(as_version* ver, const char* str)
 {
-	int rv = sscanf(str, "%hu.%hu.%hu.%hu", &ver->major, &ver->minor, &ver->patch, &ver->build);
+	// Accept leading numeric version components and ignore any non-numeric suffix
+	// Examples: "7.1.0.2", "7.1.0.2-1-gabcdef", "7.1.0"
+	char buf[64];
+	size_t n = 0;
+	// Skip leading whitespace
+	while (*str && isspace((unsigned char)*str)) {
+		str++;
+	}
+	for (; *str && n < sizeof(buf) - 1; str++) {
+		if (isdigit((unsigned char)*str) || *str == '.') {
+			buf[n++] = *str;
+		} else {
+			break; // stop at first non-digit/non-dot
+		}
+	}
+	buf[n] = '\0';
+
+	int rv = sscanf(buf, "%hu.%hu.%hu.%hu", &ver->major, &ver->minor, &ver->patch, &ver->build);
 
 	// 3 components are required.
 	if (rv < 3) {

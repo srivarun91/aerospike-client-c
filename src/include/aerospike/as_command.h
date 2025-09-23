@@ -14,7 +14,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-#pragma once 
+#pragma once
 
 #include <aerospike/as_bin.h>
 #include <aerospike/as_buffer.h>
@@ -68,6 +68,8 @@ extern "C" {
 #define AS_FIELD_QUERY_BINS 40
 #define AS_FIELD_BATCH_INDEX 41
 #define AS_FIELD_FILTER 43
+#define AS_FIELD_VECTOR_OP 44
+#define AS_FIELD_VECTOR_DISTANCE 45
 
 // Message info1 bits
 #define AS_MSG_INFO1_READ				(1 << 0) // contains a read operation
@@ -297,7 +299,7 @@ static inline as_status
 as_command_bin_name_size(as_error* err, const char* name, size_t* size)
 {
 	size_t s = strlen(name);
-	
+
 	if (s > AS_BIN_NAME_MAX_LEN) {
 		return as_error_update(err, AEROSPIKE_ERR_PARAM, "Bin name too long: %s", name);
 	}
@@ -373,7 +375,7 @@ as_command_set_attr_read(
 	as_command_set_attr_read_header(read_mode_ap, read_mode_sc, read_attr, info_attr);
 	as_command_set_attr_compress(compress, read_attr);
 }
-	
+
 /**
  * @private
  * Write command header for write commands.
@@ -429,7 +431,7 @@ static inline uint8_t*
 as_command_write_field_string(uint8_t* begin, uint8_t id, const char* val)
 {
 	uint8_t* p = begin + AS_FIELD_HEADER_SIZE;
-	
+
 	// Copy string, but do not transfer null byte.
 	while (*val) {
 		*p++ = *val++;

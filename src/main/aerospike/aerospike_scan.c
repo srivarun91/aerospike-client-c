@@ -23,6 +23,7 @@
 #include <aerospike/as_job.h>
 #include <aerospike/as_key.h>
 #include <aerospike/as_log_macros.h>
+#include <aerospike/as_ml_vector.h>
 #include <aerospike/as_msgpack.h>
 #include <aerospike/as_operations.h>
 #include <aerospike/as_partition_tracker.h>
@@ -187,7 +188,7 @@ as_scan_parse_record_async(
 {
 	as_record rec;
 	as_record_inita(&rec, msg->n_ops);
-	
+
 	rec.gen = msg->generation;
 	rec.ttl = cf_server_void_time_to_ttl(msg->record_ttl);
 
@@ -236,7 +237,7 @@ as_scan_parse_records_async(as_event_command* cmd)
 		as_msg* msg = (as_msg*)p;
 		as_msg_swap_header_from_be(msg);
 		p += sizeof(as_msg);
-		
+
 		if (msg->info3 & AS_MSG_INFO3_LAST) {
 			if (msg->result_code != AEROSPIKE_OK) {
 				// The server returned a fatal error.
@@ -292,7 +293,7 @@ as_scan_parse_record(uint8_t** pp, as_msg* msg, as_scan_task* task, as_error* er
 {
 	as_record rec;
 	as_record_inita(&rec, msg->n_ops);
-	
+
 	rec.gen = msg->generation;
 	rec.ttl = cf_server_void_time_to_ttl(msg->record_ttl);
 
@@ -334,12 +335,12 @@ as_scan_parse_records(as_error* err, as_command* cmd, as_node* node, uint8_t* bu
 	uint8_t* p = buf;
 	uint8_t* end = buf + size;
 	as_status status;
-	
+
 	while (p < end) {
 		as_msg* msg = (as_msg*)p;
 		as_msg_swap_header_from_be(msg);
 		p += sizeof(as_msg);
-		
+
 		if (msg->info3 & AS_MSG_INFO3_LAST) {
 			if (msg->result_code != AEROSPIKE_OK) {
 				// The server returned a fatal error.
@@ -371,11 +372,11 @@ as_scan_parse_records(as_error* err, as_command* cmd, as_node* node, uint8_t* bu
 		}
 
 		status = as_scan_parse_record(&p, msg, task, err);
-		
+
 		if (status != AEROSPIKE_OK) {
 			return status;
 		}
-		
+
 		if (as_load_uint32(task->error_mutex)) {
 			err->code = AEROSPIKE_ERR_SCAN_ABORTED;
 			return err->code;
@@ -405,12 +406,12 @@ as_scan_command_size(
 		sb->size += as_command_string_field_size(scan->ns);
 		n_fields++;
 	}
-	
+
 	if (scan->set[0]) {
 		sb->size += as_command_string_field_size(scan->set);
 		n_fields++;
 	}
-	
+
 	if (policy->records_per_second > 0) {
 		sb->size += as_command_field_size(sizeof(uint32_t));
 		n_fields++;
@@ -423,15 +424,15 @@ as_scan_command_size(
 	// Estimate taskId size.
 	sb->size += as_command_field_size(8);
 	n_fields++;
-	
+
 	// Estimate background function size.
 	as_buffer_init(&sb->argbuffer);
-	
+
 	if (scan->apply_each.function[0]) {
 		sb->size += as_command_field_size(1);
 		sb->size += as_command_string_field_size(scan->apply_each.module);
 		sb->size += as_command_string_field_size(scan->apply_each.function);
-		
+
 		if (scan->apply_each.arglist) {
 			// If the query has a udf w/ arglist, then serialize it.
 			as_serializer ser;
@@ -442,7 +443,7 @@ as_scan_command_size(
 		sb->size += as_command_field_size(sb->argbuffer.size);
 		n_fields += 4;
 	}
-	
+
 	if (policy->base.filter_exp) {
 		sb->size += AS_FIELD_HEADER_SIZE + policy->base.filter_exp->packed_sz;
 		n_fields++;
@@ -460,6 +461,15 @@ as_scan_command_size(
 
 	if (sb->max_records > 0) {
 		sb->size += as_command_field_size(8);
+		n_fields++;
+	}
+
+	// Estimate vector field size if vector scan is requested
+	if (scan->vector && scan->vector_bin_name) {
+		// Vector field contains: bin name length + bin name + serialized vector
+		uint32_t bin_name_len = (uint32_t)strlen(scan->vector_bin_name);
+		uint32_t vector_data_size = 16 + (scan->vector->size * scan->vector->item_size); // 16-byte header + data
+		sb->size += as_command_field_size(1 + bin_name_len + vector_data_size); // 1 byte for bin name length
 		n_fields++;
 	}
 
@@ -530,11 +540,11 @@ as_scan_command_init(
 				AS_POLICY_READ_MODE_SC_SESSION, -1, policy->base.total_timeout, sb->n_fields, n_ops,
 				read_attr, 0, AS_MSG_INFO3_PARTITION_DONE);
 	}
-	
+
 	if (scan->ns[0]) {
 		p = as_command_write_field_string(p, AS_FIELD_NAMESPACE, scan->ns);
 	}
-	
+
 	if (scan->set[0]) {
 		p = as_command_write_field_string(p, AS_FIELD_SETNAME, scan->set);
 	}
@@ -549,7 +559,7 @@ as_scan_command_init(
 	// Write task_id field.
 	p = as_command_write_field_uint64(p, AS_FIELD_TASK_ID, task_id);
 	sb->task_id_offset = ((uint32_t)(p - cmd)) - sizeof(uint64_t);
-	
+
 	// Write background function
 	if (scan->apply_each.function[0]) {
 		p = as_command_write_field_header(p, AS_FIELD_UDF_OP, 1);
@@ -559,10 +569,35 @@ as_scan_command_init(
 		p = as_command_write_field_buffer(p, AS_FIELD_UDF_ARGLIST, &sb->argbuffer);
 	}
 	as_buffer_destroy(&sb->argbuffer);
-	
+
 	// Write filter expression.
 	if (policy->base.filter_exp) {
 		p = as_exp_write(policy->base.filter_exp, p);
+	}
+
+	// Write vector field for vector scan.
+	if (scan->vector && scan->vector_bin_name) {
+		// Serialize the vector
+		as_bytes vector_bytes;
+		as_status status = as_ml_vector_serialize(scan->vector, scan->vector_element_type, &vector_bytes);
+		if (status == AEROSPIKE_OK) {
+			// Calculate field size: bin name length (1 byte) + bin name + serialized vector
+			uint32_t bin_name_len = (uint32_t)strlen(scan->vector_bin_name);
+			uint32_t field_size = 1 + bin_name_len + vector_bytes.size;
+
+			p = as_command_write_field_header(p, AS_FIELD_VECTOR_OP, field_size);
+
+			// Write bin name length and bin name
+			*p++ = (uint8_t)bin_name_len;
+			memcpy(p, scan->vector_bin_name, bin_name_len);
+			p += bin_name_len;
+
+			// Write serialized vector
+			memcpy(p, vector_bytes.value, vector_bytes.size);
+			p += vector_bytes.size;
+
+			as_bytes_destroy(&vector_bytes);
+		}
 	}
 
 	sb->cmd_size_pre = (uint32_t)(p - cmd);
@@ -733,7 +768,7 @@ static void
 as_scan_worker(void* data)
 {
 	as_scan_task* task = (as_scan_task*)data;
-	
+
 	as_scan_complete_task complete_task;
 	complete_task.node = task->node;
 	complete_task.task_id = task->task_id;
@@ -810,13 +845,13 @@ as_scan_generic(
 			task_node->node = nodes->array[i];
 
 			int rc = as_thread_pool_queue_task(&cluster->thread_pool, as_scan_worker, task_node);
-			
+
 			if (rc) {
 				// Thread could not be added. Abort entire scan.
 				if (as_fas_uint32(task.error_mutex, 1) == 0) {
 					status = as_error_update(task.err, AEROSPIKE_ERR_CLIENT, "Failed to add scan thread: %d", rc);
 				}
-				
+
 				// Reset node count to threads that were run.
 				n_wait_nodes = i;
 				break;
@@ -828,18 +863,18 @@ as_scan_generic(
 		for (uint32_t i = 0; i < n_wait_nodes; i++) {
 			as_scan_complete_task complete;
 			cf_queue_pop(task.complete_q, &complete, CF_QUEUE_FOREVER);
-			
+
 			if (complete.result != AEROSPIKE_OK && status == AEROSPIKE_OK) {
 				status = complete.result;
 			}
 		}
-		
+
 		// Release temporary queue.
 		cf_queue_destroy(task.complete_q);
 	}
 	else {
 		task.complete_q = 0;
-		
+
 		// Run node scans in series.
 		for (uint32_t i = 0; i < nodes->size && status == AEROSPIKE_OK; i++) {
 			task.node = nodes->array[i];
@@ -895,7 +930,7 @@ as_scan_partitions(
 		}
 
 		uint32_t n_nodes = pt->node_parts.size;
-		
+
 		if (pt->iteration > 1) {
 			as_cluster_add_retries(cluster, n_nodes);
 		}
@@ -933,13 +968,13 @@ as_scan_partitions(
 				task_node->node = task_node->np->node;
 
 				int rc = as_thread_pool_queue_task(&cluster->thread_pool, as_scan_worker, task_node);
-				
+
 				if (rc) {
 					// Thread could not be added. Abort entire scan.
 					if (as_fas_uint32(task.error_mutex, 1) == 0) {
 						status = as_error_update(task.err, AEROSPIKE_ERR_CLIENT, "Failed to add scan thread: %d", rc);
 					}
-					
+
 					// Reset node count to threads that were run.
 					n_wait_nodes = i;
 					break;
@@ -950,18 +985,18 @@ as_scan_partitions(
 			for (uint32_t i = 0; i < n_wait_nodes; i++) {
 				as_scan_complete_task complete;
 				cf_queue_pop(task.complete_q, &complete, CF_QUEUE_FOREVER);
-				
+
 				if (complete.result != AEROSPIKE_OK && status == AEROSPIKE_OK) {
 					status = complete.result;
 				}
 			}
-			
+
 			// Release temporary queue.
 			cf_queue_destroy(task.complete_q);
 		}
 		else {
 			task.complete_q = 0;
-			
+
 			// Run node scans in series.
 			for (uint32_t i = 0; i < n_nodes && status == AEROSPIKE_OK; i++) {
 				task.np = as_vector_get(&pt->node_parts, i);
@@ -1353,17 +1388,17 @@ aerospike_scan_info(
 {
 	as_job_info job_info;
 	as_status status = aerospike_job_info(as, err, policy, "scan", scan_id, false, &job_info);
-	
+
 	if (status == AEROSPIKE_OK) {
 		switch (job_info.status) {
 			case AS_JOB_STATUS_COMPLETED:
 				info->status = AS_SCAN_STATUS_COMPLETED;
 				break;
-				
+
 			case AS_JOB_STATUS_INPROGRESS:
 				info->status = AS_SCAN_STATUS_INPROGRESS;
 				break;
-			
+
 			default:
 				info->status = AS_SCAN_STATUS_UNDEF;
 				break;
@@ -1421,7 +1456,7 @@ aerospike_scan_node(
 
 	// Retrieve node.
 	as_node* node = as_node_get_by_name(cluster, node_name);
-		
+
 	if (! node) {
 		return as_error_update(err, AEROSPIKE_ERR_PARAM, "Invalid node name: %s", node_name);
 	}
@@ -1545,7 +1580,7 @@ aerospike_scan_node_async(
 
 	// Retrieve and reserve node.
 	as_node* node = as_node_get_by_name(cluster, node_name);
-	
+
 	if (! node) {
 		return as_error_update(err, AEROSPIKE_ERR_PARAM, "Invalid node name: %s", node_name);
 	}
@@ -1598,4 +1633,73 @@ aerospike_scan_partitions_async(
 		return status;
 	}
 	return as_scan_partition_async(cluster, err, policy, scan, pt, listener, udata, event_loop);
+}
+
+// Vector scan result wrapper to adapt regular scan callback to vector scan callback
+typedef struct vector_scan_wrapper_s {
+	aerospike_vector_scan_callback callback;
+	void* udata;
+} vector_scan_wrapper;
+
+// Adapter callback that converts regular scan results to vector scan results
+static bool
+vector_scan_adapter_callback(const as_val* val, void* udata)
+{
+	vector_scan_wrapper* wrapper = (vector_scan_wrapper*)udata;
+
+	if (!val) {
+		return false; // Scan complete
+	}
+
+	// For now, we'll extract basic record info and set distance to 0.0
+	// The server should return records with distance information in the future
+	as_record* rec = as_record_fromval(val);
+	if (!rec) {
+		return true; // Continue with next record
+	}
+
+	// Extract namespace, set, and digest from the record
+	const char* ns = rec->key.ns[0] ? rec->key.ns : "unknown";
+	const char* set = rec->key.set[0] ? rec->key.set : NULL;
+	uint8_t* digest = rec->key.digest.value;
+	// Extract vector distance from message operations
+	double distance = 0.0;
+	for (uint16_t i = 0; i < rec->bins.size; i++) {
+		as_bin* bin = &rec->bins.entries[i];
+		if (strcmp(bin->name, "distance") == 0) {
+			if (bin->valuep && as_val_type(bin->valuep) == AS_DOUBLE) {
+				distance = as_double_get((as_double*)bin->valuep);
+			}
+			break;
+		}
+	}
+
+	return wrapper->callback(ns, digest, set, distance, wrapper->udata);
+}
+
+as_status
+aerospike_vector_scan(
+	aerospike* as, as_error* err, const as_policy_scan* policy, as_scan* scan,
+	aerospike_vector_scan_callback callback, void* udata
+	)
+{
+	// Validate input parameters
+	if (!as || !err || !scan || !callback) {
+		return as_error_set_message(err, AEROSPIKE_ERR_PARAM, "Invalid parameters");
+	}
+
+	// Validate that vector is set
+	if (!scan->vector || !scan->vector_bin_name) {
+		return as_error_set_message(err, AEROSPIKE_ERR_PARAM, "Vector scan requires vector and vector_bin_name to be set");
+	}
+
+	// Create wrapper for callback adaptation
+	vector_scan_wrapper wrapper = {
+		.callback = callback,
+		.udata = udata
+	};
+
+	// Use the regular scan infrastructure with our adapter callback
+	// The vector field will be added automatically by the command building code
+	return aerospike_scan_foreach(as, err, policy, scan, vector_scan_adapter_callback, &wrapper);
 }
